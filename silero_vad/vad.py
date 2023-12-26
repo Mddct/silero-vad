@@ -33,7 +33,7 @@ class OnnxWrapper:
 
 def get_speech_timestamps(
     model: OnnxWrapper,
-    wav_path: str,
+    wav_sr_dict: str,
     threshold: float = 0.5,
     min_speech_duration_ms: int = 250,
     max_speech_duration_s: float = float("inf"),
@@ -48,7 +48,7 @@ def get_speech_timestamps(
     Parameters
     ----------
     model: preloaded .onnx silero VAD model
-    wav_path: wav path
+    wav_sr_dict:
     threshold: float (default - 0.5)
         Speech threshold. Silero VAD outputs speech probabilities for each audio
         chunk, probabilities ABOVE this value are considered as SPEECH. It is
@@ -82,13 +82,12 @@ def get_speech_timestamps(
         based on return_seconds)
     """
 
-    sr = librosa.get_samplerate(wav_path)
+    sr = wav_sr_dict['sample_rate'] 
+    wav, sr = wav_sr_dict['waveform'], sr
     if sr in model.sample_rates:
         step = 1
-        wav, sr = librosa.load(wav_path, sr=sr)
     else:
         step = sr // 16000
-        wav, sr = librosa.load(wav_path, sr=16000)
     if len(wav.shape) > 1:
         raise ValueError(
             "More than one dimension in audio."
@@ -312,13 +311,16 @@ def main():
     parser.add_argument("--onnx_model", help="silero vad onnx model path")
     args = parser.parse_args()
 
+    wav, sr = librosa.load(args.wav, sr=None)
+    if sr != 8000 or sr != 16000:
+        wav = librosa.resample(wav, orig_sr=sr,  target_sr=16000)
+        sr = 16000
     model = OnnxWrapper(args.onnx_model)
-    speech_timestamps = get_speech_timestamps(model, args.wav, return_seconds=True)
+    speech_timestamps = get_speech_timestamps(model, {'waveform': wav, 'sample_rate': sr}, return_seconds=True)
     print("None streaming result:", speech_timestamps)
 
     print("Streaming result:", end=" ")
     vad_iterator = VADIterator(model)
-    wav, _ = librosa.load(args.wav, sr=None)
     window_size_samples = 512  # number of samples in a single audio chunk
     for i in range(0, len(wav), window_size_samples):
         chunk = wav[i : i + window_size_samples]
